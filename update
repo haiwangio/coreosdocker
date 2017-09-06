@@ -18,7 +18,7 @@ build_builder() {
 from alpine
 maintainer %MAINTAINER%
 run apk add --update squashfs-tools xz curl bash wget axel
-add builder /usr/local/bin/builder
+add builderrun /usr/local/bin/builder
 entrypoint ["builder"]
 EO_BUILDER
 	docker build --tag "$tag" "$Dockerdir"
@@ -46,9 +46,7 @@ channel_of() {
 }
 
 releases() {
-	( curl -sL http://stable.release.core-os.net/amd64-usr/current/version.txt; \
-		curl -sL http://beta.release.core-os.net/amd64-usr/current/version.txt; \
-		curl -sL http://alpha.release.core-os.net/amd64-usr/current/version.txt \
+	( curl -sL http://stable.release.core-os.net/amd64-usr/current/version.txt; 
 	) \
         | grep COREOS_VERSION= | sed "s/COREOS_VERSION=//" \
 	| sort \
@@ -74,10 +72,12 @@ tags_of() {
 build_readme() {
 	local image="$1"
 	local channel="$2"
+        local release="$3"
+
 	sed \
 		-e "s@%IMAGE%@$image@g" \
 		-e "s@%CHANNEL%@$channel@g" \
-	> coreos/README.md
+	> $release/README.md
 }
 
 is_latest() {
@@ -103,7 +103,7 @@ build_dockerfile() {
 	sed \
 		-e "s@%RELEASE%@$release@g" \
 		-e "s/%MAINTAINER%/$MAINTAINER/g" \
-	> coreos/Dockerfile
+	> $release/Dockerfile
 }
 
 restore_image() {
@@ -122,7 +122,7 @@ build_circle_yaml() {
 		-e "s@%IMAGE_NAME%@$image_name@g" \
 		-e "s@%RELEASE%@$release@g" \
 		-e "s@%CHANNEL%@$channel@g" \
-	> coreos/circle.yml
+	> $release/circle.yml
 }
 
 git_append_tag_here() {
@@ -153,7 +153,7 @@ build_image() {
 	build_builder "$BUILDER_ID"
 	docker run --rm --tty \
 	  --cpu-quota "-1" \
-		--volume "$PWD/coreos":/target \
+		--volume "$PWD/$release":/target \
 		--env TARGET=/target --env TRACE=$TRACE \
 		coreosdockerbuild  "$release"
 }
@@ -176,17 +176,12 @@ prepare_new_release () {
 }
 
 main() {
-	[[ -e "coreos/.git" ]] \
-	|| prepare_repository
         echo $(releases)
 	for release in $(releases); do
+                mkdir -p $release
                 echo $release
-		( cd coreos; has_tag "$release" ) && continue
 		local channel="$(channel_of "$release")"
 		[[ -z "$channel" ]] && continue
-		( cd coreos; git checkout "$channel" || git checkout -b "$channel" )
-		( cd coreos; prepare_new_release )
-		local tags="$(tags_of "$release")"
 		local image="${OWNER}/coreos:$release"
 		if is_head_of "$channel" "$release"; then
 			image="${OWNER}/coreos:$channel"
@@ -194,14 +189,12 @@ main() {
 				is_latest "$release" && image="${OWNER}/coreos"
 			fi
 		fi
-		cat README.md.template  | build_readme "$image" "$channel"
+		cat README.md.template  | build_readme "$image" "$channel" $release
 		cat Dockerfile.template | build_dockerfile "$release"
 		cat circle.yml.template | build_circle_yaml "$image" "$channel" "$release"
 		[[ -s "temp/coreos-$release.tar.xz" ]] \
 		&& restore_image "$release" \
 		|| build_image "$release"
-		( cd coreos; commit_release "$release"; tag_image "$release" "$tags" )
-	#	[[ "$PUSH" ]] && ( cd coreos; git push --all --force origin; git push --tags --force origin )
 	done
 	docker inspect "$BUILDER_ID" >/dev/null 2>/dev/null \
 	&& docker rmi -f "$BUILDER_ID"

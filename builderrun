@@ -137,7 +137,7 @@ main() {
   local channel="$(channel_of "$version")"
   local temp="${TEMP}"
 #   curl -L "$(url_of "$channel" "$version")" \
-    axel -n 10 "$(url_of "$channel" "$version")"
+    axel -a -n 10  "$(url_of "$channel" "$version")"
    gunzip $SRC_FILE  
    cp coreos_production_pxe_image.cpio $temp
    cd "$temp"; cpio -i -F coreos_production_pxe_image.cpio
